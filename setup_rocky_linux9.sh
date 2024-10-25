@@ -20,7 +20,7 @@ check_error
 
 # 必要なパッケージのインストール
 echo -e "${GREEN}必要なパッケージをインストールしています...${RESET}"
-sudo dnf install -y openssh-server firewall-cmd
+sudo dnf install -y openssh-server
 check_error
 
 # SSHの有効化と起動
@@ -29,10 +29,5 @@ sudo systemctl enable sshd
 sudo systemctl start sshd
 check_error
 
-# ファイアウォールの設定
-echo -e "${GREEN}ファイアウォールにSSHサービスを追加しています...${RESET}"
-sudo firewall-cmd --add-service=ssh --permanent
-sudo firewall-cmd --reload
-check_error
-
+# 初期セットアップ完了メッセージ
 echo -e "${GREEN}初期セットアップが完了しました。${RESET}"

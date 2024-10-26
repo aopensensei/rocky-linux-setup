@@ -17,6 +17,14 @@ deploy_status() {
 # メイン処理
 clear
 
+# 必要なツールのインストール
+deploy_status "Installing required tools (sshpass, ansible)..." $YELLOW
+sudo dnf install -y sshpass ansible
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to install required tools. Please check your network connection or package manager." $RED
+    exit 1
+fi
+
 # IPアドレスの入力
 deploy_status "Enter IP addresses..." $CYAN
 echo "Please enter the IP address for the DMZ server (srv01):"
@@ -29,9 +37,9 @@ if [[ $dmz_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ $control_ip =~ ^[0-9]
     deploy_status "Updating inventory file with new IP addresses..." $GREEN
     # inventoryファイルのパス
     inventory_file="inventory.ini"
-    
+
     # inventoryファイルを作成し、IPアドレスを設定
-echo "[dmz]" > $inventory_file
+    echo "[dmz]" > $inventory_file
     echo "$dmz_ip ansible_user=zansin ansible_password=Passw0rd!" >> $inventory_file
     echo "" >> $inventory_file
     echo "[control]" >> $inventory_file

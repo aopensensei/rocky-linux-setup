@@ -3,6 +3,7 @@
   become: yes
 
   tasks:
+    # 必要なパッケージのインストール
     - name: Install required packages
       yum:
         name:
@@ -17,6 +18,14 @@
           - php-gd
         state: present
 
+    # ファイアウォールの無効化
+    - name: Stop and disable firewalld for unrestricted access
+      service:
+        name: firewalld
+        state: stopped
+        enabled: no
+
+    # NginxとMariaDBの起動と有効化
     - name: Start and enable nginx and mariadb
       service:
         name: "{{ item }}"
@@ -25,3 +34,22 @@
       loop:
         - nginx
         - mariadb
+
+    # MariaDBの初期設定
+    - name: Configure MariaDB for WordPress and EC-Cube
+      mysql_user:
+        name: "{{ item.name }}"
+        password: "{{ item.password }}"
+        priv: "{{ item.db }}.*:ALL"
+        state: present
+      loop:
+        - { name: 'wp_user', password: 'wp_pass', db: 'wordpress_db' }
+        - { name: 'eccube_user', password: 'eccube_pass', db: 'eccube_db' }
+      notify:
+        - Restart mariadb
+
+  handlers:
+    - name: Restart mariadb
+      service:
+        name: mariadb
+        state: restarted

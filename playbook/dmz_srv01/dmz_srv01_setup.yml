@@ -4,13 +4,73 @@
 
   vars:
     mariadb_root_password: "Hard-ing0"
+    user_password: "Hard-ing0"
+    users:
+      - user01
+      - user02
+      - user03
+      - user04
+      - user05
+      - user06
+      - user07
+      - user08
+      - user09
+      - user10
+    eccube_version: "4.2.3"
+    php_version: "7.4"
 
   tasks:
-    # 1. 必要なパッケージのインストール
+    # 0. タイムゾーンの設定
+    - name: Set timezone to Asia/Tokyo
+      command: timedatectl set-timezone Asia/Tokyo
+
+    # 1. ユーザーの追加
+    - name: Create users with default skel
+      user:
+        name: "{{ item }}"
+        password: "{{ user_password | password_hash('sha512') }}"
+        state: present
+        create_home: yes
+        shell: /bin/bash
+      loop: "{{ users }}"
+
+    - name: Add users to sudo group
+      user:
+        name: "{{ item }}"
+        groups: wheel
+        append: yes
+      loop: "{{ users }}"
+
+    # 2. Remi リポジトリのインストール（PHP 7.4 のため）
+    - name: Install EPEL repository
+      yum:
+        name: epel-release
+        state: present
+
+    - name: Install Remi repository
+      yum:
+        name: https://rpms.remirepo.net/enterprise/remi-release-9.rpm
+        state: present
+
+    - name: Install DNF utils
+      yum:
+        name: dnf-utils
+        state: present
+
+    - name: Reset PHP module
+      shell: dnf module reset php -y
+      args:
+        warn: false
+
+    - name: Enable PHP 7.4 module
+      shell: dnf module enable php:remi-7.4 -y
+      args:
+        warn: false
+
+    # 3. 必要なパッケージのインストール
     - name: Install required packages
       yum:
         name:
-          - epel-release
           - nginx
           - mariadb-server
           - python3
@@ -23,7 +83,7 @@
           - tar
         state: present
 
-    # 2. 追加のPHPモジュールのインストール
+    # 4. 追加のPHPモジュールのインストール
     - name: Install additional PHP modules
       yum:
         name:
@@ -37,14 +97,14 @@
           - php-curl
         state: present
 
-    # 3. ファイアウォールの無効化
+    # 5. ファイアウォールの無効化
     - name: Stop and disable firewalld for unrestricted access
       service:
         name: firewalld
         state: stopped
         enabled: no
 
-    # 4. サービスの起動と有効化
+    # 6. サービスの起動と有効化
     - name: Start and enable services
       service:
         name: "{{ item }}"
@@ -55,7 +115,7 @@
         - mariadb
         - php-fpm
 
-    # 5. MariaDBの設定
+    # 7. MariaDBの設定
     - name: Change root authentication plugin to mysql_native_password
       mysql_user:
         name: root
@@ -89,25 +149,18 @@
         - { name: 'admin', password: 'Hard-ing0', db: 'wordpress_db' }
         - { name: 'admin', password: 'Hard-ing0000', db: 'eccube_db' }
 
-    # 6. WordPressのインストールと設定
+    # 8. WordPressのインストールと設定
     - name: Download WordPress
       get_url:
         url: https://ja.wordpress.org/latest-ja.tar.gz
         dest: /tmp/latest-ja.tar.gz
+        force: no
 
     - name: Extract WordPress
       unarchive:
         src: /tmp/latest-ja.tar.gz
         dest: /var/www/html/
         remote_src: yes
-        creates: /var/www/html/wordpress
-
-    - name: Move WordPress files to web root
-      shell: |
-        mv /var/www/html/wordpress/* /var/www/html/
-        rm -rf /var/www/html/wordpress
-      args:
-        executable: /bin/bash
 
     - name: Set permissions for WordPress
       file:
@@ -116,7 +169,7 @@
         group: nginx
         recurse: yes
 
-    # 7. EC-Cubeのインストールと設定
+    # 9. EC-Cubeのインストールと設定
     - name: Create directory for EC-Cube
       file:
         path: /var/www/html/shop
@@ -126,20 +179,15 @@
 
     - name: Download EC-CUBE
       get_url:
-        url: https://downloads.ec-cube.net/src/eccube-4.2.1.zip  # 最新版のURLに変更
+        url: "https://downloads.ec-cube.net/src/eccube-{{ eccube_version }}.zip"
         dest: /tmp/eccube.zip
-
-    - name: Install unzip package
-      yum:
-        name: unzip
-        state: present
+        force: no
 
     - name: Extract EC-CUBE
       unarchive:
         src: /tmp/eccube.zip
         dest: /var/www/html/shop
         remote_src: yes
-        creates: /var/www/html/shop/html
 
     - name: Set permissions for EC-CUBE
       file:
@@ -148,7 +196,7 @@
         group: nginx
         recurse: yes
 
-    # 8. Nginxの設定
+    # 10. Nginxの設定
     - name: Configure Nginx for WordPress and EC-CUBE
       template:
         src: nginx.conf.j2
@@ -156,14 +204,12 @@
       notify:
         - Restart nginx
 
-    # 9. PHP-FPMの設定
+    # 11. PHP-FPMの設定
     - name: Ensure PHP-FPM is running
       service:
         name: php-fpm
         state: started
         enabled: yes
-
-
 
   handlers:
     - name: Restart nginx

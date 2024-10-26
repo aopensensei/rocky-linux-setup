@@ -7,8 +7,8 @@ YELLOW="\033[33m"
 CYAN="\033[36m"
 RESET="\033[0m"
 
-# リポジトリURL（GitHubのリポジトリURLを設定）
-REPO_URL="https://github.com/username/rocky-linux-setup.git"
+# リポジトリURL（正しいGitHubのリポジトリURLを設定）
+REPO_URL="https://github.com/aopensensei/rocky-linux-setup.git"
 REPO_DIR="rocky-linux-setup"
 
 # 進捗表示関数

@@ -17,6 +17,14 @@ deploy_status() {
 # メイン処理
 clear
 
+# EPELリポジトリのインストールと確認
+deploy_status "Enabling EPEL repository for additional packages..." $YELLOW
+sudo dnf install -y epel-release
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to enable EPEL repository. Please check your network connection." $RED
+    exit 1
+fi
+
 # 必要なツールのインストール
 deploy_status "Installing required tools (sshpass, ansible)..." $YELLOW
 sudo dnf install -y sshpass ansible
@@ -52,10 +60,18 @@ fi
 # ホスト名の設定
 deploy_status "Setting hostname for DMZ server (srv01)..." $YELLOW
 sshpass -p "Passw0rd!" ssh -o StrictHostKeyChecking=no "zansin@$dmz_ip" "sudo hostnamectl set-hostname srv01"
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to set hostname for DMZ server." $RED
+    exit 1
+fi
 
 # Ansibleプレイブックの実行
 deploy_status "Running Ansible playbook to set up DMZ server as a web server..." $GREEN
 ansible-playbook -i $inventory_file dmz-setup.yml
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to run Ansible playbook." $RED
+    exit 1
+fi
 
 deploy_status "DMZ server setup complete!" $GREEN
 

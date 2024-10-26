@@ -21,6 +21,15 @@ deploy_status() {
 # メイン処理
 clear
 
+# 必要なツールのインストール
+deploy_status "Installing required tools (git, sshpass, ansible)..." $YELLOW
+sudo dnf install -y epel-release
+sudo dnf install -y git sshpass ansible
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to install required tools. Please check your network connection or package manager." $RED
+    exit 1
+fi
+
 # リポジトリのクローン
 deploy_status "Cloning the repository for playbook and configuration files..." $YELLOW
 if [ -d "$REPO_DIR" ]; then
@@ -31,21 +40,16 @@ else
     cd "$REPO_DIR"
 fi
 
-# 必要なツールのインストール
-deploy_status "Installing required tools (sshpass, ansible)..." $YELLOW
-sudo dnf install -y epel-release
-sudo dnf install -y sshpass ansible
-if [ $? -ne 0 ]; then
-    deploy_status "Failed to install required tools. Please check your network connection or package manager." $RED
-    exit 1
-fi
-
 # IPアドレスの入力
 deploy_status "Enter IP addresses..." $CYAN
 echo "Please enter the IP address for the DMZ server (srv01):"
 read dmz_ip
 echo "Please enter the IP address for the control server:"
 read control_ip
+
+# `odp`ユーザのパスワード入力
+deploy_status "Enter the password for the odp user..." $CYAN
+read -s odp_password
 
 # IPアドレスの検証と反映
 if [[ $dmz_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ $control_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -61,13 +65,6 @@ else
     exit 1
 fi
 
-# `odp`ユーザのパスワード入力
-deploy_status "Enter the password for the odp user..." $CYAN
-read -s odp_password
-
-# inventory.iniファイルにパスワードを設定
-sed -i "s/<dmz_password>/$odp_password/g; s/<control_password>/$odp_password/g" $inventory_file
-
 # ホスト名の設定
 deploy_status "Setting hostname for DMZ server (srv01)..." $YELLOW
 sshpass -p "$odp_password" ssh -o StrictHostKeyChecking=no "odp@$dmz_ip" "echo '$odp_password' | sudo -S hostnamectl set-hostname srv01"
@@ -79,7 +76,6 @@ fi
 # Ansibleプレイブックの実行
 deploy_status "Running Ansible playbook to set up DMZ server as a web server..." $GREEN
 ANSIBLE_PASSWORD="$odp_password"
-ANSIBLE_SSH_ARGS="-o StrictHostKeyChecking=no"
 sshpass -p "$ANSIBLE_PASSWORD" ansible-playbook -i $inventory_file playbook/dmz_srv01/dmz_srv01_setup.yml --user=odp --ask-become-pass --extra-vars "ansible_ssh_pass=$ANSIBLE_PASSWORD"
 if [ $? -ne 0 ]; then
     deploy_status "Failed to run Ansible playbook." $RED

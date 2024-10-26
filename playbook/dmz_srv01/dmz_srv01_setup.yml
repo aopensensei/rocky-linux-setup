@@ -183,10 +183,10 @@
         extra_opts: [--strip-components=1]
 
     # Composerのインストール
-    - name: Install Composer
+    - name: Install Composer globally
       get_url:
-        url: https://getcomposer.org/installer
-        dest: /tmp/composer-setup.php
+        url: https://getcomposer.org/composer-stable.phar
+        dest: /usr/local/bin/composer
         mode: '0755'
 
     - name: Verify Composer installer signature
@@ -209,7 +209,7 @@
 
     # EC-Cubeの依存関係をインストール
     - name: Install EC-CUBE dependencies with Composer
-      shell: composer install --no-dev --optimize-autoloader
+      shell: /usr/local/bin/composer install --no-dev --optimize-autoloader
       args:
         chdir: /var/www/html/shop/
 

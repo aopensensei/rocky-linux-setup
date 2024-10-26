@@ -7,6 +7,10 @@ YELLOW="\033[33m"
 CYAN="\033[36m"
 RESET="\033[0m"
 
+# リポジトリURL（GitHubのリポジトリURLを設定）
+REPO_URL="https://github.com/username/rocky-linux-setup.git"
+REPO_DIR="rocky-linux-setup"
+
 # 進捗表示関数
 deploy_status() {
     local message=$1
@@ -16,6 +20,16 @@ deploy_status() {
 
 # メイン処理
 clear
+
+# リポジトリのクローン
+deploy_status "Cloning the repository for playbook and configuration files..." $YELLOW
+if [ -d "$REPO_DIR" ]; then
+    deploy_status "Repository already exists. Pulling latest changes..." $CYAN
+    cd "$REPO_DIR" && git pull origin main
+else
+    git clone "$REPO_URL"
+    cd "$REPO_DIR"
+fi
 
 # 必要なツールのインストール
 deploy_status "Installing required tools (sshpass, ansible)..." $YELLOW
@@ -41,7 +55,7 @@ if [[ $dmz_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ $control_ip =~ ^[0-9]
     inventory_file="playbook/inventory.ini"
 
     # テンプレートをもとにinventoryファイルを作成
-    sed "s/<dmz_ip>/$dmz_ip/g; s/<dmz_password>/$user_password/g; s/<control_ip>/$control_ip/g; s/<control_password>/$user_password/g" "$inventory_template" > "$inventory_file"
+    sed "s/<dmz_ip>/$dmz_ip/g; s/<dmz_password>/$odp_password/g; s/<control_ip>/$control_ip/g; s/<control_password>/$odp_password/g" "$inventory_template" > "$inventory_file"
 else
     deploy_status "Invalid IP address. Please try again." $RED
     exit 1

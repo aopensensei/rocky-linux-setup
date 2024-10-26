@@ -135,6 +135,7 @@
         src: /tmp/latest-ja.tar.gz
         dest: /var/www/html/
         remote_src: yes
+        extra_opts: [--strip-components=1]
 
     - name: Set permissions for WordPress
       file:
@@ -160,8 +161,9 @@
     - name: Extract EC-CUBE
       unarchive:
         src: /tmp/eccube.tar.gz
-        dest: /var/www/html/shop
+        dest: /var/www/html/shop/
         remote_src: yes
+        extra_opts: [--strip-components=1]
 
     - name: Set permissions for EC-CUBE
       file:
@@ -184,6 +186,15 @@
         name: php-fpm
         state: started
         enabled: yes
+
+    # 11. SELinuxの設定（必要に応じて）
+    - name: Set SELinux context for /var/www/html
+      sefcontext:
+        target: '/var/www/html(/.*)?'
+        setype: httpd_sys_content_t
+
+    - name: Apply SELinux file context
+      command: restorecon -Rv /var/www/html
 
   handlers:
     - name: Restart nginx

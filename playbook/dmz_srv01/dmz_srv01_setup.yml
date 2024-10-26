@@ -116,6 +116,7 @@
         plugin: mysql_native_password
         priv: '*.*:ALL,GRANT'
         state: present
+        check_implicit_admin: yes
 
     - name: Create databases for WordPress and EC-Cube
       mysql_db:

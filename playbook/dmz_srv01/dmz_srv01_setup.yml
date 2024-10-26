@@ -40,7 +40,16 @@
         append: yes
       loop: "{{ users }}"
 
-    # 2. 必要なパッケージのインストール
+    # 2. SELinuxの無効化
+    - name: Disable SELinux temporarily
+      command: setenforce 0
+      when: ansible_selinux.status == "enabled"
+
+    - name: Disable SELinux permanently
+      selinux:
+        state: disabled
+
+    # 3. 必要なパッケージのインストール
     - name: Install required packages
       yum:
         name:
@@ -55,30 +64,38 @@
           - php-gd
           - unzip
           - tar
+          - php-cli  # Composerに必要
+          - git      # Composerに必要
+          - curl     # Composerの検証に必要
         state: present
 
-    # 3. 追加のPHPモジュールのインストール
+    # 4. 追加のPHPモジュールのインストール
     - name: Install additional PHP modules
       yum:
         name:
-          - php-mbstring
-          - php-xml
-          - php-pdo
+          - php-bcmath
+          - php-gd
           - php-intl
+          - php-mbstring
           - php-opcache
+          - php-pdo
+          - php-xml
           - php-zip
           - php-json
           - php-curl
+          - php-session
+          - php-dom
+          - php-simplexml
         state: present
 
-    # 4. ファイアウォールの無効化
+    # 5. ファイアウォールの無効化
     - name: Stop and disable firewalld for unrestricted access
       service:
         name: firewalld
         state: stopped
         enabled: no
 
-    # 5. サービスの起動と有効化
+    # 6. サービスの起動と有効化
     - name: Start and enable services
       service:
         name: "{{ item }}"
@@ -89,7 +106,7 @@
         - mariadb
         - php-fpm
 
-    # 6. MariaDBの設定
+    # 7. MariaDBの設定
     - name: Change root authentication plugin to mysql_native_password
       mysql_user:
         name: root
@@ -120,10 +137,10 @@
         login_password: "{{ mariadb_root_password }}"
         state: present
       loop:
-        - { name: 'admin', password: 'Hard-ing0', db: 'wordpress_db' }
-        - { name: 'admin', password: 'Hard-ing0000', db: 'eccube_db' }
+        - { name: 'admin_wp', password: 'Hard-ing0', db: 'wordpress_db' }
+        - { name: 'admin_ec', password: 'Hard-ing0000', db: 'eccube_db' }
 
-    # 7. WordPressのインストールと設定
+    # 8. WordPressのインストールと設定
     - name: Download WordPress
       get_url:
         url: https://ja.wordpress.org/latest-ja.tar.gz
@@ -144,7 +161,7 @@
         group: nginx
         recurse: yes
 
-    # 8. EC-Cubeのインストールと設定
+    # 9. EC-Cubeのインストールと設定
     - name: Create directory for EC-Cube
       file:
         path: /var/www/html/shop
@@ -165,36 +182,86 @@
         remote_src: yes
         extra_opts: [--strip-components=1]
 
-    - name: Set permissions for EC-CUBE
+    # Composerのインストール
+    - name: Install Composer
+      get_url:
+        url: https://getcomposer.org/installer
+        dest: /tmp/composer-setup.php
+        mode: '0755'
+
+    - name: Verify Composer installer signature
+      shell: |
+        HASH="$(curl -s https://composer.github.io/installer.sig)"
+        php -r "if (hash_file('SHA384', '/tmp/composer-setup.php') === '$HASH') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('/tmp/composer-setup.php'); } echo PHP_EOL;"
+      args:
+        executable: /bin/bash
+      register: composer_verify
+      changed_when: false
+
+    - name: Install Composer globally
+      shell: php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+      when: '"Installer verified" in composer_verify.stdout'
+
+    - name: Remove Composer installer
+      file:
+        path: /tmp/composer-setup.php
+        state: absent
+
+    # EC-Cubeの依存関係をインストール
+    - name: Install EC-CUBE dependencies with Composer
+      shell: composer install --no-dev --optimize-autoloader
+      args:
+        chdir: /var/www/html/shop/
+
+    # EC-Cubeのパーミッション設定
+    - name: Set permissions for EC-CUBE directories
+      file:
+        path: "{{ item }}"
+        owner: nginx
+        group: nginx
+        mode: '0775'
+        recurse: yes
+      loop:
+        - /var/www/html/shop/app/log
+        - /var/www/html/shop/app/cache
+        - /var/www/html/shop/html/upload
+        - /var/www/html/shop/html/template
+        - /var/www/html/shop/var
+
+    - name: Set permissions for EC-CUBE files
       file:
         path: /var/www/html/shop/
         owner: nginx
         group: nginx
+        mode: '0644'
         recurse: yes
+        state: file
 
-    # 9. Nginxの設定
-    - name: Configure Nginx for WordPress and EC-Cube
+    # 10. Nginxの設定
+    - name: Configure Nginx for WordPress and EC-CUBE
       template:
         src: nginx.conf.j2
         dest: /etc/nginx/nginx.conf
       notify:
         - Restart nginx
 
-    # 10. PHP-FPMの設定
+    # 11. PHP-FPMの設定
     - name: Ensure PHP-FPM is running
       service:
         name: php-fpm
         state: started
         enabled: yes
 
-    # 11. SELinuxの設定（必要に応じて）
-    - name: Set SELinux context for /var/www/html
-      sefcontext:
-        target: '/var/www/html(/.*)?'
-        setype: httpd_sys_content_t
+    # 12. サービスの再起動
+    - name: Restart PHP-FPM
+      service:
+        name: php-fpm
+        state: restarted
 
-    - name: Apply SELinux file context
-      command: restorecon -Rv /var/www/html
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
 
   handlers:
     - name: Restart nginx

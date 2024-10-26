@@ -78,7 +78,9 @@ fi
 
 # Ansibleプレイブックの実行
 deploy_status "Running Ansible playbook to set up DMZ server as a web server..." $GREEN
-ansible-playbook -i $inventory_file playbook/dmz_srv01/dmz_srv01_setup.yml --user=odp --ask-become-pass
+ANSIBLE_PASSWORD="$odp_password"
+ANSIBLE_SSH_ARGS="-o StrictHostKeyChecking=no"
+sshpass -p "$ANSIBLE_PASSWORD" ansible-playbook -i $inventory_file playbook/dmz_srv01/dmz_srv01_setup.yml --user=odp --ask-become-pass --extra-vars "ansible_ssh_pass=$ANSIBLE_PASSWORD"
 if [ $? -ne 0 ]; then
     deploy_status "Failed to run Ansible playbook." $RED
     exit 1

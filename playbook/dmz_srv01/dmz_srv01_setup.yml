@@ -1,0 +1,108 @@
+# dmz_srv01_setup.yml
+---
+- name: Setup DMZ server for WordPress and EC-Cube
+  hosts: dmz
+  become: yes
+
+  vars:
+    nginx_conf_path: /etc/nginx/sites-available/default
+    wordpress_db: wordpress_db
+    wordpress_user: wp_user
+    wordpress_password: wp_pass
+    eccube_db: eccube_db
+    eccube_user: eccube_user
+    eccube_password: eccube_pass
+
+  tasks:
+    - name: Install required packages
+      yum:
+        name:
+          - epel-release
+          - nginx
+          - mariadb-server
+          - php
+          - php-fpm
+          - php-mysqlnd
+          - php-gd
+        state: present
+
+    - name: Start and enable nginx and mariadb
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - nginx
+        - mariadb
+
+    - name: Configure MariaDB for WordPress and EC-Cube
+      mysql_user:
+        name: "{{ item.name }}"
+        password: "{{ item.password }}"
+        priv: "{{ item.db }}.*:ALL"
+        state: present
+      loop:
+        - { name: "{{ wordpress_user }}", password: "{{ wordpress_password }}", db: "{{ wordpress_db }}" }
+        - { name: "{{ eccube_user }}", password: "{{ eccube_password }}", db: "{{ eccube_db }}" }
+
+    - name: Create databases for WordPress and EC-Cube
+      mysql_db:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - "{{ wordpress_db }}"
+        - "{{ eccube_db }}"
+
+    - name: Download and set up WordPress
+      block:
+        - name: Download WordPress
+          get_url:
+            url: https://wordpress.org/latest.tar.gz
+            dest: /var/www/
+        
+        - name: Extract WordPress
+          unarchive:
+            src: /var/www/latest.tar.gz
+            dest: /var/www/html/
+            remote_src: yes
+
+        - name: Set WordPress permissions
+          file:
+            path: /var/www/html/wordpress
+            owner: nginx
+            group: nginx
+            state: directory
+            mode: '0755'
+
+    - name: Download and set up EC-Cube
+      block:
+        - name: Download EC-Cube
+          get_url:
+            url: https://downloads.ec-cube.net/src/eccube-4.0.5.zip
+            dest: /var/www/
+        
+        - name: Extract EC-Cube
+          unarchive:
+            src: /var/www/eccube-4.0.5.zip
+            dest: /var/www/html/
+            remote_src: yes
+
+        - name: Set EC-Cube permissions
+          file:
+            path: /var/www/html/eccube
+            owner: nginx
+            group: nginx
+            state: directory
+            mode: '0755'
+
+    - name: Configure nginx for WordPress and EC-Cube
+      template:
+        src: nginx_wordpress_eccube.j2
+        dest: "{{ nginx_conf_path }}"
+      notify: Restart nginx
+
+  handlers:
+    - name: Restart nginx
+      service:
+        name: nginx
+        state: restarted

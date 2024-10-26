@@ -17,14 +17,10 @@ deploy_status() {
 # メイン処理
 clear
 
-# odp管理ユーザのパスワードを入力
-deploy_status "Enter the password for the odp user..." $CYAN
-read -s odp_password
-
 # 必要なツールのインストール
 deploy_status "Installing required tools (sshpass, ansible)..." $YELLOW
-echo "$odp_password" | sudo -S dnf install -y epel-release
-echo "$odp_password" | sudo -S dnf install -y sshpass ansible
+sudo dnf install -y epel-release
+sudo dnf install -y sshpass ansible
 if [ $? -ne 0 ]; then
     deploy_status "Failed to install required tools. Please check your network connection or package manager." $RED
     exit 1
@@ -40,30 +36,27 @@ read control_ip
 # IPアドレスの検証と反映
 if [[ $dmz_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ $control_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     deploy_status "Updating inventory file with new IP addresses..." $GREEN
-    # inventoryファイルのパス
-    inventory_file="inventory.ini"
+    # inventoryテンプレートファイルと出力ファイルのパス
+    inventory_template="playbook/inventory.ini.template"
+    inventory_file="playbook/inventory.ini"
 
-    # inventoryファイルを作成し、IPアドレスを設定
-    echo "[dmz]" > $inventory_file
-    echo "$dmz_ip ansible_user=zansin ansible_password=<password_placeholder>" >> $inventory_file
-    echo "" >> $inventory_file
-    echo "[control]" >> $inventory_file
-    echo "$control_ip ansible_user=zansin ansible_password=<password_placeholder>" >> $inventory_file
+    # テンプレートをもとにinventoryファイルを作成
+    sed "s/<dmz_ip>/$dmz_ip/g; s/<dmz_password>/$user_password/g; s/<control_ip>/$control_ip/g; s/<control_password>/$user_password/g" "$inventory_template" > "$inventory_file"
 else
     deploy_status "Invalid IP address. Please try again." $RED
     exit 1
 fi
 
-# パスワードの入力と保存
-deploy_status "Enter the password for the zansin user..." $CYAN
-read -s user_password
+# `odp`ユーザのパスワード入力
+deploy_status "Enter the password for the odp user..." $CYAN
+read -s odp_password
 
 # inventory.iniファイルにパスワードを設定
-sed -i "s/<password_placeholder>/$user_password/g" $inventory_file
+sed -i "s/<dmz_password>/$odp_password/g; s/<control_password>/$odp_password/g" $inventory_file
 
 # ホスト名の設定
 deploy_status "Setting hostname for DMZ server (srv01)..." $YELLOW
-sshpass -p "$user_password" ssh -o StrictHostKeyChecking=no "zansin@$dmz_ip" "echo '$odp_password' | sudo -S hostnamectl set-hostname srv01"
+sshpass -p "$odp_password" ssh -o StrictHostKeyChecking=no "odp@$dmz_ip" "echo '$odp_password' | sudo -S hostnamectl set-hostname srv01"
 if [ $? -ne 0 ]; then
     deploy_status "Failed to set hostname for DMZ server." $RED
     exit 1
@@ -71,7 +64,7 @@ fi
 
 # Ansibleプレイブックの実行
 deploy_status "Running Ansible playbook to set up DMZ server as a web server..." $GREEN
-echo "$odp_password" | ansible-playbook -i $inventory_file dmz-setup.yml --ask-become-pass
+ansible-playbook -i $inventory_file playbook/dmz_srv01/dmz_srv01_setup.yml --user=odp --ask-become-pass
 if [ $? -ne 0 ]; then
     deploy_status "Failed to run Ansible playbook." $RED
     exit 1

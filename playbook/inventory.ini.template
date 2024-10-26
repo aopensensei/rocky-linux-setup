@@ -1,0 +1,6 @@
+[dmz]
+<dmz_ip> ansible_user=odp ansible_password=<dmz_password>
+
+[control]
+<control_ip> ansible_user=odp ansible_password=<control_password>
+

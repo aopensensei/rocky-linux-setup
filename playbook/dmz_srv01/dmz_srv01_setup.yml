@@ -6,7 +6,7 @@
     mariadb_root_password: "Hard-ing0"
 
   tasks:
-    # 必要なパッケージのインストール
+    # 1. 必要なパッケージのインストール
     - name: Install required packages
       yum:
         name:
@@ -14,31 +14,47 @@
           - nginx
           - mariadb-server
           - python3
-          - python3-PyMySQL  # MySQLモジュールを追加
+          - python3-PyMySQL
           - php
           - php-fpm
           - php-mysqlnd
           - php-gd
+          - unzip
         state: present
 
-    # ファイアウォールの無効化
+    # 2. 追加のPHPモジュールのインストール
+    - name: Install additional PHP modules
+      yum:
+        name:
+          - php-mbstring
+          - php-xml
+          - php-pdo
+          - php-intl
+          - php-opcache
+          - php-zip
+          - php-json
+          - php-curl
+        state: present
+
+    # 3. ファイアウォールの無効化
     - name: Stop and disable firewalld for unrestricted access
       service:
         name: firewalld
         state: stopped
         enabled: no
 
-    # NginxとMariaDBの起動と有効化
-    - name: Start and enable nginx and mariadb
+    # 4. サービスの起動と有効化
+    - name: Start and enable services
       service:
         name: "{{ item }}"
         state: started
-        enabled: true
+        enabled: yes
       loop:
         - nginx
         - mariadb
+        - php-fpm
 
-    # MariaDB rootユーザの認証プラグインを変更し、パスワードを設定
+    # 5. MariaDBの設定
     - name: Change root authentication plugin to mysql_native_password
       mysql_user:
         name: root
@@ -49,7 +65,6 @@
         priv: '*.*:ALL,GRANT'
         state: present
 
-    # WordPressとEC-Cube用のデータベースを作成
     - name: Create databases for WordPress and EC-Cube
       mysql_db:
         name: "{{ item }}"
@@ -60,8 +75,7 @@
         - wordpress_db
         - eccube_db
 
-    # MariaDBのユーザと権限の設定
-    - name: Configure MariaDB for WordPress and EC-Cube
+    - name: Configure MariaDB users
       mysql_user:
         name: "{{ item.name }}"
         password: "{{ item.password }}"
@@ -73,10 +87,89 @@
       loop:
         - { name: 'admin', password: 'Hard-ing0', db: 'wordpress_db' }
         - { name: 'admin', password: 'Hard-ing0000', db: 'eccube_db' }
+
+    # 6. WordPressのインストールと設定
+    - name: Download WordPress
+      get_url:
+        url: https://ja.wordpress.org/latest-ja.tar.gz
+        dest: /tmp/latest-ja.tar.gz
+
+    - name: Extract WordPress
+      unarchive:
+        src: /tmp/latest-ja.tar.gz
+        dest: /var/www/html/
+        remote_src: yes
+        creates: /var/www/html/wordpress
+
+    - name: Move WordPress files to web root
+      shell: |
+        mv /var/www/html/wordpress/* /var/www/html/
+        rm -rf /var/www/html/wordpress
+      args:
+        executable: /bin/bash
+
+    - name: Set permissions for WordPress
+      file:
+        path: /var/www/html/
+        owner: nginx
+        group: nginx
+        recurse: yes
+
+    # 7. EC-Cubeのインストールと設定
+    - name: Create directory for EC-Cube
+      file:
+        path: /var/www/html/shop
+        state: directory
+        owner: nginx
+        group: nginx
+
+    - name: Download EC-CUBE
+      get_url:
+        url: https://downloads.ec-cube.net/src/eccube-4.2.1.zip  # 最新版のURLに変更
+        dest: /tmp/eccube.zip
+
+    - name: Install unzip package
+      yum:
+        name: unzip
+        state: present
+
+    - name: Extract EC-CUBE
+      unarchive:
+        src: /tmp/eccube.zip
+        dest: /var/www/html/shop
+        remote_src: yes
+        creates: /var/www/html/shop/html
+
+    - name: Set permissions for EC-CUBE
+      file:
+        path: /var/www/html/shop/
+        owner: nginx
+        group: nginx
+        recurse: yes
+
+    # 8. Nginxの設定
+    - name: Configure Nginx for WordPress and EC-CUBE
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
       notify:
-        - Restart mariadb
+        - Restart nginx
+
+    # 9. PHP-FPMの設定
+    - name: Ensure PHP-FPM is running
+      service:
+        name: php-fpm
+        state: started
+        enabled: yes
+
+
 
   handlers:
+    - name: Restart nginx
+      service:
+        name: nginx
+        state: restarted
+
     - name: Restart mariadb
       service:
         name: mariadb

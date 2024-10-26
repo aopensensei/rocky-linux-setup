@@ -26,12 +26,11 @@ http {
         }
 
         location /shop/ {
-            alias /var/www/html/shop/html/;
-            try_files $uri $uri/ /index.php?$args;
+            alias /var/www/html/shop/;
+            try_files $uri $uri/ /shop/index.php?$args;
         }
 
         location ~ \.php$ {
-            root           /var/www/html;
             fastcgi_pass   unix:/run/php-fpm/www.sock;
             fastcgi_index  index.php;
             fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;

@@ -17,14 +17,13 @@
       - user09
       - user10
     eccube_version: "4.2.3"
-    php_version: "7.4"
 
   tasks:
-    # 0. Set timezone to Asia/Tokyo
+    # 0. タイムゾーンの設定
     - name: Set timezone to Asia/Tokyo
       command: timedatectl set-timezone Asia/Tokyo
 
-    # 1. Add users
+    # 1. ユーザーの追加
     - name: Create users with default skel
       user:
         name: "{{ item }}"
@@ -41,46 +40,11 @@
         append: yes
       loop: "{{ users }}"
 
-    # 2. Install EPEL repository
-    - name: Install EPEL repository
-      yum:
-        name: epel-release
-        state: present
-
-    # 3. Import Remi GPG key
-    - name: Import Remi GPG key
-      rpm_key:
-        state: present
-        key: https://rpms.remirepo.net/RPM-GPG-KEY-remi
-
-    # 4. Install Remi repository
-    - name: Install Remi repository
-      yum:
-        name: https://rpms.remirepo.net/enterprise/remi-release-9.rpm
-        state: present
-
-    # 5. Install DNF utils
-    - name: Install DNF utils
-      yum:
-        name: dnf-utils
-        state: present
-
-    # 6. Reset PHP module
-    - name: Reset PHP module
-      shell: dnf module reset php -y
-      args:
-        warn: false
-
-    # 7. Enable PHP 7.4 module
-    - name: Enable PHP 7.4 module
-      shell: dnf module enable php:remi-7.4 -y
-      args:
-        warn: false
-
-    # 8. Install required packages
+    # 2. 必要なパッケージのインストール
     - name: Install required packages
       yum:
         name:
+          - epel-release
           - nginx
           - mariadb-server
           - python3
@@ -93,7 +57,7 @@
           - tar
         state: present
 
-    # 9. Install additional PHP modules
+    # 3. 追加のPHPモジュールのインストール
     - name: Install additional PHP modules
       yum:
         name:
@@ -107,14 +71,14 @@
           - php-curl
         state: present
 
-    # 10. Stop and disable firewalld
+    # 4. ファイアウォールの無効化
     - name: Stop and disable firewalld for unrestricted access
       service:
         name: firewalld
         state: stopped
         enabled: no
 
-    # 11. Start and enable services
+    # 5. サービスの起動と有効化
     - name: Start and enable services
       service:
         name: "{{ item }}"
@@ -125,7 +89,7 @@
         - mariadb
         - php-fpm
 
-    # 12. MariaDB configuration
+    # 6. MariaDBの設定
     - name: Change root authentication plugin to mysql_native_password
       mysql_user:
         name: root
@@ -159,7 +123,7 @@
         - { name: 'admin', password: 'Hard-ing0', db: 'wordpress_db' }
         - { name: 'admin', password: 'Hard-ing0000', db: 'eccube_db' }
 
-    # 13. WordPress installation
+    # 7. WordPressのインストールと設定
     - name: Download WordPress
       get_url:
         url: https://ja.wordpress.org/latest-ja.tar.gz
@@ -179,7 +143,7 @@
         group: nginx
         recurse: yes
 
-    # 14. EC-Cube installation
+    # 8. EC-Cubeのインストールと設定
     - name: Create directory for EC-Cube
       file:
         path: /var/www/html/shop
@@ -199,14 +163,14 @@
         dest: /var/www/html/shop
         remote_src: yes
 
-    - name: Set permissions for EC-Cube
+    - name: Set permissions for EC-CUBE
       file:
         path: /var/www/html/shop/
         owner: nginx
         group: nginx
         recurse: yes
 
-    # 15. Configure Nginx
+    # 9. Nginxの設定
     - name: Configure Nginx for WordPress and EC-Cube
       template:
         src: nginx.conf.j2
@@ -214,7 +178,7 @@
       notify:
         - Restart nginx
 
-    # 16. Ensure PHP-FPM is running
+    # 10. PHP-FPMの設定
     - name: Ensure PHP-FPM is running
       service:
         name: php-fpm

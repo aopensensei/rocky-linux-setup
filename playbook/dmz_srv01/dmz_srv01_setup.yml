@@ -38,16 +38,29 @@
         - nginx
         - mariadb
 
-    # MariaDB rootパスワードの設定
-    - name: Set root password for MariaDB
+    # MariaDB rootユーザの認証プラグインを変更し、パスワードを設定
+    - name: Change root authentication plugin to mysql_native_password
       mysql_user:
         name: root
         host: localhost
         password: "{{ mariadb_root_password }}"
+        login_unix_socket: /var/lib/mysql/mysql.sock
+        plugin: mysql_native_password
+        priv: '*.*:ALL,GRANT'
         state: present
-      ignore_errors: yes  # 初回実行時にrootパスワードが未設定の場合のみ設定
 
-    # MariaDBのユーザとデータベースの設定
+    # WordPressとEC-Cube用のデータベースを作成
+    - name: Create databases for WordPress and EC-Cube
+      mysql_db:
+        name: "{{ item }}"
+        state: present
+        login_user: root
+        login_password: "{{ mariadb_root_password }}"
+      loop:
+        - wordpress_db
+        - eccube_db
+
+    # MariaDBのユーザと権限の設定
     - name: Configure MariaDB for WordPress and EC-Cube
       mysql_user:
         name: "{{ item.name }}"
@@ -58,8 +71,8 @@
         login_password: "{{ mariadb_root_password }}"
         state: present
       loop:
-        - { name: 'wp_user', password: 'wp_pass', db: 'wordpress_db' }
-        - { name: 'eccube_user', password: 'eccube_pass', db: 'eccube_db' }
+        - { name: 'admin', password: 'Hard-ing0', db: 'wordpress_db' }
+        - { name: 'admin', password: 'Hard-ing0000', db: 'eccube_db' }
       notify:
         - Restart mariadb
 

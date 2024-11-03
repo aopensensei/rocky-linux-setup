@@ -1,4 +1,4 @@
-- name: Setup DMZ server for WordPress
+- name: Setup DMZ server for WordPress and EC-Cube
   hosts: dmz
   become: yes
 
@@ -16,6 +16,7 @@
       - user08
       - user09
       - user10
+    eccube_version: "4.2.3"
 
   tasks:
     # 0. タイムゾーンの設定
@@ -63,17 +64,28 @@
           - php-gd
           - unzip
           - tar
+          - php-cli  # Composerに必要
+          - git      # Composerに必要
+          - curl     # Composerの検証に必要
         state: present
 
     # 4. 追加のPHPモジュールのインストール
     - name: Install additional PHP modules
       yum:
         name:
+          - php-bcmath
+          - php-gd
+          - php-intl
           - php-mbstring
+          - php-opcache
+          - php-pdo
           - php-xml
+          - php-zip
           - php-json
           - php-curl
-          - php-zip
+          - php-session
+          - php-dom
+          - php-simplexml
         state: present
 
     # 5. ファイアウォールの無効化
@@ -106,22 +118,28 @@
         state: present
         check_implicit_admin: yes
 
-    - name: Create database for WordPress
+    - name: Create databases for WordPress and EC-Cube
       mysql_db:
-        name: wordpress_db
+        name: "{{ item }}"
         state: present
         login_user: root
         login_password: "{{ mariadb_root_password }}"
+      loop:
+        - wordpress_db
+        - eccube_db
 
-    - name: Configure MariaDB user for WordPress
+    - name: Configure MariaDB users
       mysql_user:
-        name: admin_wp
-        password: "{{ mariadb_root_password }}"
-        priv: 'wordpress_db.*:ALL'
+        name: "{{ item.name }}"
+        password: "{{ item.password }}"
+        priv: "{{ item.db }}.*:ALL"
         host: localhost
         login_user: root
         login_password: "{{ mariadb_root_password }}"
         state: present
+      loop:
+        - { name: 'admin_wp', password: 'Hard-ing0', db: 'wordpress_db' }
+        - { name: 'admin_ec', password: 'Hard-ing0000', db: 'eccube_db' }
 
     # 8. WordPressのインストールと設定
     - name: Download WordPress
@@ -144,22 +162,98 @@
         group: nginx
         recurse: yes
 
-    # 9. Nginxの設定
-    - name: Configure Nginx for WordPress
+    # 9. EC-Cubeのインストールと設定
+    - name: Create directory for EC-Cube
+      file:
+        path: /var/www/html/shop
+        state: directory
+        owner: nginx
+        group: nginx
+
+    - name: Download EC-CUBE
+      get_url:
+        url: "https://downloads.ec-cube.net/src/eccube-{{ eccube_version }}.tar.gz"
+        dest: /tmp/eccube.tar.gz
+        force: no
+
+    - name: Extract EC-CUBE
+      unarchive:
+        src: /tmp/eccube.tar.gz
+        dest: /var/www/html/shop/
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    # Composerのインストール
+    - name: Install Composer globally
+      get_url:
+        url: https://getcomposer.org/composer-stable.phar
+        dest: /usr/local/bin/composer
+        mode: '0755'
+
+    - name: Verify Composer installer signature
+      shell: |
+        HASH="$(curl -s https://composer.github.io/installer.sig)"
+        php -r "if (hash_file('SHA384', '/tmp/composer-setup.php') === '$HASH') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('/tmp/composer-setup.php'); } echo PHP_EOL;"
+      args:
+        executable: /bin/bash
+      register: composer_verify
+      changed_when: false
+
+    - name: Install Composer globally
+      shell: php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+      when: '"Installer verified" in composer_verify.stdout'
+
+    - name: Remove Composer installer
+      file:
+        path: /tmp/composer-setup.php
+        state: absent
+
+    # EC-Cubeの依存関係をインストール
+    - name: Install EC-CUBE dependencies with Composer
+      shell: /usr/local/bin/composer install --no-dev --optimize-autoloader
+      args:
+        chdir: /var/www/html/shop/
+
+    # EC-Cubeのパーミッション設定
+    - name: Set permissions for EC-CUBE directories
+      file:
+        path: "{{ item }}"
+        owner: nginx
+        group: nginx
+        mode: '0775'
+        recurse: yes
+      loop:
+        - /var/www/html/shop/app/log
+        - /var/www/html/shop/app/cache
+        - /var/www/html/shop/html/upload
+        - /var/www/html/shop/html/template
+        - /var/www/html/shop/var
+
+    - name: Set permissions for EC-CUBE files
+      file:
+        path: /var/www/html/shop/
+        owner: nginx
+        group: nginx
+        mode: '0644'
+        recurse: yes
+        state: file
+
+    # 10. Nginxの設定
+    - name: Configure Nginx for WordPress and EC-CUBE
       template:
         src: nginx.conf.j2
         dest: /etc/nginx/nginx.conf
       notify:
         - Restart nginx
 
-    # 10. PHP-FPMの設定
+    # 11. PHP-FPMの設定
     - name: Ensure PHP-FPM is running
       service:
         name: php-fpm
         state: started
         enabled: yes
 
-    # 11. サービスの再起動
+    # 12. サービスの再起動
     - name: Restart PHP-FPM
       service:
         name: php-fpm

@@ -8,14 +8,8 @@ events {
 }
 
 http {
-    include       /etc/nginx/mime.types;
+    include       mime.types;
     default_type  application/octet-stream;
-
-    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
-                      '$status $body_bytes_sent "$http_referer" '
-                      '"$http_user_agent" "$http_x_forwarded_for"';
-
-    access_log  /var/log/nginx/access.log  main;
 
     sendfile        on;
     keepalive_timeout  65;
@@ -29,6 +23,18 @@ http {
 
         location / {
             try_files $uri $uri/ /index.php?$args;
+        }
+
+        location /shop/ {
+            alias /var/www/html/shop/;
+            try_files $uri $uri/ /shop/index.php?$args;
+
+            location ~ \.php$ {
+                fastcgi_pass   unix:/run/php-fpm/www.sock;
+                fastcgi_index  index.php;
+                fastcgi_param  SCRIPT_FILENAME  $request_filename;
+                include        fastcgi_params;
+            }
         }
 
         location ~ \.php$ {

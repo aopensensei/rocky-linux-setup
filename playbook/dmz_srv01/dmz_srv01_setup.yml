@@ -84,7 +84,7 @@
           - php-json
           - php-curl
           - php-zip
-      state: present
+        state: present
 
     # 5. ファイアウォールの無効化
     - name: Stop and disable firewalld for unrestricted access

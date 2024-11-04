@@ -1,3 +1,103 @@
+----- setup_rocky_linux9.sh -----
+#!/bin/bash
+
+# カラーディスプレイ定義
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+CYAN="\033[36m"
+RESET="\033[0m"
+
+# リポジトリURL（正しいGitHubのリポジトリURLを設定）
+REPO_URL="https://github.com/aopensensei/rocky-linux-setup.git"
+REPO_DIR="rocky-linux-setup"
+
+# 進捗表示関数
+deploy_status() {
+    local message=$1
+    local color=$2
+    echo -e "${color}${message}${RESET}"
+}
+
+# メイン処理
+clear
+
+# 必要なツールのインストール
+deploy_status "Installing required tools (git, sshpass, ansible)..." $YELLOW
+sudo dnf install -y epel-release
+sudo dnf install -y git sshpass ansible
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to install required tools. Please check your network connection or package manager." $RED
+    exit 1
+fi
+
+# リポジトリのクローン
+deploy_status "Cloning the repository for playbook and configuration files..." $YELLOW
+if [ -d "$REPO_DIR" ]; then
+    deploy_status "Repository already exists. Pulling latest changes..." $CYAN
+    cd "$REPO_DIR" && git pull origin main
+else
+    git clone "$REPO_URL"
+    cd "$REPO_DIR"
+fi
+
+# IPアドレスの入力
+deploy_status "Enter IP addresses..." $CYAN
+echo "Please enter the IP address for the DMZ server (srv01):"
+read dmz_ip
+echo "Please enter the IP address for the control server:"
+read control_ip
+
+# `odp`ユーザのパスワード入力
+deploy_status "Enter the password for the odp user..." $CYAN
+read -s odp_password
+
+# IPアドレスの検証と反映
+if [[ $dmz_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ $control_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    deploy_status "Updating inventory file with new IP addresses..." $GREEN
+    # inventoryテンプレートファイルと出力ファイルのパス
+    inventory_template="playbook/inventory.ini.template"
+    inventory_file="playbook/inventory.ini"
+
+    # テンプレートをもとにinventoryファイルを作成
+    sed "s/<dmz_ip>/$dmz_ip/g; s/<dmz_password>/$odp_password/g; s/<control_ip>/$control_ip/g; s/<control_password>/$odp_password/g" "$inventory_template" > "$inventory_file"
+else
+    deploy_status "Invalid IP address. Please try again." $RED
+    exit 1
+fi
+
+# ホスト名の設定
+deploy_status "Setting hostname for DMZ server (srv01)..." $YELLOW
+sshpass -p "$odp_password" ssh -o StrictHostKeyChecking=no "odp@$dmz_ip" "echo '$odp_password' | sudo -S hostnamectl set-hostname srv01"
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to set hostname for DMZ server." $RED
+    exit 1
+fi
+
+# Ansibleプレイブックの実行
+deploy_status "Running Ansible playbook to set up DMZ server as a web server..." $GREEN
+ANSIBLE_PASSWORD="$odp_password"
+sshpass -p "$ANSIBLE_PASSWORD" ansible-playbook -i $inventory_file playbook/dmz_srv01/dmz_srv01_setup.yml --user=odp --ask-become-pass --extra-vars "ansible_ssh_pass=$ANSIBLE_PASSWORD"
+if [ $? -ne 0 ]; then
+    deploy_status "Failed to run Ansible playbook." $RED
+    exit 1
+fi
+
+deploy_status "DMZ server setup complete!" $GREEN
+
+# 終了メッセージ
+deploy_status "Setup script finished successfully." $CYAN
+
+
+----- playbook/inventory.ini.template -----
+[dmz]
+<dmz_ip> ansible_user=odp ansible_password=<dmz_password> ansible_python_interpreter=/usr/bin/python3
+
+[control]
+<control_ip> ansible_user=odp ansible_password=<control_password>
+
+
+----- playbook/dmz_srv01/dmz_srv01_setup.yml -----
 - name: Setup DMZ server for WordPress
   hosts: dmz
   become: yes
@@ -20,11 +120,6 @@
     wordpress_db_user: "admin_wp"
     wordpress_db_password: "Hard-ing0"
     wordpress_db_host: "localhost"
-    wordpress_site_url: "http://{{ srv01_ip }}"
-    wordpress_site_title: "My WordPress Site"
-    wordpress_admin_user: "admin"
-    wordpress_admin_password: "admin_password"
-    wordpress_admin_email: "admin@example.com"
 
   tasks:
     # 0. タイムゾーンの設定
@@ -72,7 +167,6 @@
           - php-gd
           - unzip
           - tar
-          - curl  # WP-CLI に必要
         state: present
 
     # 4. 追加のPHPモジュールのインストール
@@ -180,28 +274,6 @@
         - { path: '/var/www/html/wp-content', mode: '0755' }
         - { path: '/var/www/html/wp-content/uploads', mode: '0755' }
 
-    # WP-CLI のインストール
-    - name: Download WP-CLI
-      get_url:
-        url: https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-        dest: /usr/local/bin/wp
-        mode: '0755'
-
-    # WordPress の初期セットアップ
-    - name: Install WordPress with WP-CLI
-      shell: |
-        wp core install \
-          --url="{{ wordpress_site_url }}" \
-          --title="{{ wordpress_site_title }}" \
-          --admin_user="{{ wordpress_admin_user }}" \
-          --admin_password="{{ wordpress_admin_password }}" \
-          --admin_email="{{ wordpress_admin_email }}" \
-          --skip-email
-      args:
-        chdir: /var/www/html
-      environment:
-        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
-
     # 9. Nginxの設定
     - name: Configure Nginx for WordPress
       template:
@@ -238,3 +310,82 @@
       service:
         name: mariadb
         state: restarted
+
+
+----- playbook/dmz_srv01/templates/nginx.conf.j2 -----
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile        on;
+    keepalive_timeout  65;
+
+    server {
+        listen       80;
+        server_name  localhost;
+
+        root /var/www/html;
+        index index.php index.html index.htm;
+
+        location / {
+            try_files $uri $uri/ /index.php?$args;
+        }
+
+        location ~ \.php$ {
+            fastcgi_pass   unix:/run/php-fpm/www.sock;
+            fastcgi_index  index.php;
+            fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+            include        fastcgi_params;
+        }
+    }
+}
+
+
+----- playbook/dmz_srv01/templates/wp-config.php.j2 -----
+<?php
+define( 'DB_NAME', '{{ wordpress_db_name }}' );
+define( 'DB_USER', '{{ wordpress_db_user }}' );
+define( 'DB_PASSWORD', '{{ wordpress_db_password }}' );
+define( 'DB_HOST', '{{ wordpress_db_host }}' );
+define( 'DB_CHARSET', 'utf8' );
+define( 'DB_COLLATE', '' );
+
+/**#@+
+ * Authentication Unique Keys and Salts.
+ */
+define( 'AUTH_KEY',         '{{ auth_key }}' );
+define( 'SECURE_AUTH_KEY',  '{{ secure_auth_key }}' );
+define( 'LOGGED_IN_KEY',    '{{ logged_in_key }}' );
+define( 'NONCE_KEY',        '{{ nonce_key }}' );
+define( 'AUTH_SALT',        '{{ auth_salt }}' );
+define( 'SECURE_AUTH_SALT', '{{ secure_auth_salt }}' );
+define( 'LOGGED_IN_SALT',   '{{ logged_in_salt }}' );
+define( 'NONCE_SALT',       '{{ nonce_salt }}' );
+/**#@-*/
+
+$table_prefix = 'wp_';
+
+define( 'WP_DEBUG', false );
+
+if ( ! defined( 'ABSPATH' ) ) {
+    define( 'ABSPATH', __DIR__ . '/' );
+}
+
+require_once ABSPATH . 'wp-settings.php';
+
+

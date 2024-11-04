@@ -1,0 +1,5 @@
+eccube_db_name: "eccube_db"
+eccube_db_user: "eccube_user"
+eccube_db_password: "YourStrongPassword"
+eccube_db_host: "localhost"
+eccube_site_url: "{{ ansible_default_ipv4.address }}"

@@ -1,0 +1,57 @@
+- name: Create database for EC-CUBE
+  become_user: root
+  mysql_db:
+    name: "{{ eccube_db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+
+- name: Configure MariaDB user for EC-CUBE
+  become_user: root
+  mysql_user:
+    name: "{{ eccube_db_user }}"
+    password: "{{ eccube_db_password }}"
+    priv: "{{ eccube_db_name }}.*:ALL"
+    host: "{{ eccube_db_host }}"
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    state: present
+
+- name: Create directory for EC-CUBE
+  file:
+    path: /var/www/html/shop
+    state: directory
+    owner: nginx
+    group: nginx
+    mode: '0755'
+
+- name: Download EC-CUBE
+  get_url:
+    url: https://downloads.ec-cube.net/src/eccube-4.2.7.zip
+    dest: "{{ ansible_env.HOME }}/eccube-4.2.7.zip"
+    mode: '0644'
+
+- name: Unarchive EC-CUBE
+  unarchive:
+    src: "{{ ansible_env.HOME }}/eccube-4.2.7.zip"
+    dest: /var/www/html/shop
+    owner: nginx
+    group: nginx
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+    creates: /var/www/html/shop/index.php
+
+- name: Set permissions for EC-CUBE directories
+  file:
+    path: "{{ item.path }}"
+    owner: nginx
+    group: nginx
+    mode: "{{ item.mode }}"
+    recurse: yes
+  loop:
+    - { path: '/var/www/html/shop', mode: '0755' }
+    - { path: '/var/www/html/shop/html/template', mode: '0755' }
+    - { path: '/var/www/html/shop/html/template/admin', mode: '0755' }
+    - { path: '/var/www/html/shop/app/log', mode: '0777' }
+    - { path: '/var/www/html/shop/app/cache', mode: '0777' }
+

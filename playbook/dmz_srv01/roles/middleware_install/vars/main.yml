@@ -1,4 +1,3 @@
----
 packages:
   - epel-release
   - nginx
@@ -15,3 +14,9 @@ packages:
   - php-cli
   - php-mbstring
   - php-xml
+  # EC-CUBE に必要な PHP モジュールを追加
+  - php-intl
+  - php-opcache
+  - php-pdo
+  - php-pdo_mysql
+  - php-zip

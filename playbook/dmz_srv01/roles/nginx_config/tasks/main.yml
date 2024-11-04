@@ -1,0 +1,20 @@
+- name: Configure main Nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+  notify:
+    - Restart nginx
+
+- name: Configure WordPress site
+  template:
+    src: wordpress.conf.j2
+    dest: /etc/nginx/conf.d/wordpress.conf
+  notify:
+    - Restart nginx
+
+- name: Configure EC-CUBE site
+  template:
+    src: eccube.conf.j2
+    dest: /etc/nginx/conf.d/eccube.conf
+  notify:
+    - Restart nginx

@@ -1,0 +1,19 @@
+server {
+    listen       80;
+    server_name  {{ eccube_site_url }};
+    root /var/www/html/shop;
+    index index.php index.html index.htm;
+
+    location /shop/ {
+        alias /var/www/html/shop/;
+        try_files $uri $uri/ /shop/index.php?$args;
+    }
+
+    location ~ \.php$ {
+        alias /var/www/html/shop/;
+        fastcgi_pass   unix:/run/php-fpm/www.sock;
+        fastcgi_index  index.php;
+        fastcgi_param  SCRIPT_FILENAME  $request_filename;
+        include        fastcgi_params;
+    }
+}

@@ -101,215 +101,12 @@ deploy_status "Setup script finished successfully." $CYAN
 - name: Setup DMZ server for WordPress
   hosts: dmz
   become: yes
+  gather_facts: yes
 
-  vars:
-    mariadb_root_password: "Hard-ing0"
-    user_password: "Hard-ing0"
-    users:
-      - user01
-      - user02
-      - user03
-      - user04
-      - user05
-      - user06
-      - user07
-      - user08
-      - user09
-      - user10
-    wordpress_db_name: "wordpress_db"
-    wordpress_db_user: "admin_wp"
-    wordpress_db_password: "Hard-ing0"
-    wordpress_db_host: "localhost"
-
-  tasks:
-    # 0. タイムゾーンの設定
-    - name: Set timezone to Asia/Tokyo
-      command: timedatectl set-timezone Asia/Tokyo
-
-    # 1. ユーザーの追加
-    - name: Create users with default skel
-      user:
-        name: "{{ item }}"
-        password: "{{ user_password | password_hash('sha512') }}"
-        state: present
-        create_home: yes
-        shell: /bin/bash
-      loop: "{{ users }}"
-
-    - name: Add users to sudo group
-      user:
-        name: "{{ item }}"
-        groups: wheel
-        append: yes
-      loop: "{{ users }}"
-
-    # 2. SELinuxの無効化
-    - name: Disable SELinux temporarily
-      command: setenforce 0
-      when: ansible_selinux.status == "enabled"
-
-    - name: Disable SELinux permanently
-      selinux:
-        state: disabled
-
-    # 3. 必要なパッケージのインストール
-    - name: Install required packages
-      yum:
-        name:
-          - epel-release
-          - nginx
-          - mariadb-server
-          - python3
-          - python3-PyMySQL
-          - php
-          - php-fpm
-          - php-mysqlnd
-          - php-gd
-          - unzip
-          - tar
-        state: present
-
-    # 4. 追加のPHPモジュールのインストール
-    - name: Install additional PHP modules
-      yum:
-        name:
-          - php-mbstring
-          - php-xml
-          - php-json
-          - php-curl
-          - php-zip
-      state: present
-
-    # 5. ファイアウォールの無効化
-    - name: Stop and disable firewalld for unrestricted access
-      service:
-        name: firewalld
-        state: stopped
-        enabled: no
-
-    # 6. サービスの起動と有効化
-    - name: Start and enable services
-      service:
-        name: "{{ item }}"
-        state: started
-        enabled: yes
-      loop:
-        - nginx
-        - mariadb
-        - php-fpm
-
-    # 7. MariaDBの設定
-    - name: Change root authentication plugin to mysql_native_password
-      mysql_user:
-        name: root
-        host: localhost
-        password: "{{ mariadb_root_password }}"
-        login_unix_socket: /var/lib/mysql/mysql.sock
-        plugin: mysql_native_password
-        priv: '*.*:ALL,GRANT'
-        state: present
-        check_implicit_admin: yes
-
-    - name: Create database for WordPress
-      mysql_db:
-        name: "{{ wordpress_db_name }}"
-        state: present
-        login_user: root
-        login_password: "{{ mariadb_root_password }}"
-
-    - name: Configure MariaDB user for WordPress
-      mysql_user:
-        name: "{{ wordpress_db_user }}"
-        password: "{{ wordpress_db_password }}"
-        priv: "{{ wordpress_db_name }}.*:ALL"
-        host: localhost
-        login_user: root
-        login_password: "{{ mariadb_root_password }}"
-        state: present
-
-    # 8. WordPressのインストールと設定
-    - name: Download WordPress
-      get_url:
-        url: https://ja.wordpress.org/latest-ja.tar.gz
-        dest: /tmp/latest-ja.tar.gz
-        force: no
-
-    - name: Extract WordPress
-      unarchive:
-        src: /tmp/latest-ja.tar.gz
-        dest: /var/www/html/
-        remote_src: yes
-        extra_opts: [--strip-components=1]
-
-    # 認証キーとソルトの生成
-    - name: Generate WordPress authentication keys and salts
-      set_fact:
-        auth_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-        secure_auth_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-        logged_in_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-        nonce_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-        auth_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-        secure_auth_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-        logged_in_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-        nonce_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
-
-    - name: Configure wp-config.php
-      template:
-        src: wp-config.php.j2
-        dest: /var/www/html/wp-config.php
-        owner: nginx
-        group: nginx
-        mode: '0644'
-
-    # WordPressのパーミッション設定
-    - name: Set permissions for WordPress directories
-      file:
-        path: "{{ item.path }}"
-        owner: nginx
-        group: nginx
-        mode: "{{ item.mode }}"
-        recurse: yes
-      loop:
-        - { path: '/var/www/html', mode: '0755' }
-        - { path: '/var/www/html/wp-content', mode: '0755' }
-        - { path: '/var/www/html/wp-content/uploads', mode: '0755' }
-
-    # 9. Nginxの設定
-    - name: Configure Nginx for WordPress
-      template:
-        src: nginx.conf.j2
-        dest: /etc/nginx/nginx.conf
-      notify:
-        - Restart nginx
-
-    # 10. PHP-FPMの設定
-    - name: Ensure PHP-FPM is running
-      service:
-        name: php-fpm
-        state: started
-        enabled: yes
-
-    # 11. サービスの再起動
-    - name: Restart PHP-FPM
-      service:
-        name: php-fpm
-        state: restarted
-
-    - name: Restart Nginx
-      service:
-        name: nginx
-        state: restarted
-
-  handlers:
-    - name: Restart nginx
-      service:
-        name: nginx
-        state: restarted
-
-    - name: Restart mariadb
-      service:
-        name: mariadb
-        state: restarted
+  roles:
+    - role: account_setup
+    - role: middleware_install
+    - role: wordpress_setup
 
 
 ----- playbook/dmz_srv01/templates/nginx.conf.j2 -----
@@ -356,7 +153,204 @@ http {
 }
 
 
------ playbook/dmz_srv01/templates/wp-config.php.j2 -----
+----- playbook/dmz_srv01/roles/account_setup/tasks/main.yml -----
+---
+# tasks file for account_setup
+
+- name: Create users with default skel
+  user:
+    name: "{{ item }}"
+    password: "{{ user_password | password_hash('sha512') }}"
+    state: present
+    create_home: yes
+    shell: /bin/bash
+  loop: "{{ users }}"
+
+- name: Add users to sudo group
+  user:
+    name: "{{ item }}"
+    groups: wheel
+    append: yes
+  loop: "{{ users }}"
+
+
+----- playbook/dmz_srv01/roles/account_setup/vars/main.yml -----
+---
+users:
+  - user01
+  - user02
+  - user03
+  - user04
+  - user05
+  - user06
+  - user07
+  - user08
+  - user09
+  - user10
+user_password: "Hard-ing0"
+
+
+----- playbook/dmz_srv01/roles/middleware_install/handlers/main.yml -----
+---
+# handlers file for middleware_install
+
+- name: Restart nginx
+  service:
+    name: nginx
+    state: restarted
+
+- name: Restart mariadb
+  service:
+    name: mariadb
+    state: restarted
+
+
+----- playbook/dmz_srv01/roles/middleware_install/tasks/main.yml -----
+---
+# tasks file for middleware_install
+
+- name: Install required packages
+  yum:
+    name: "{{ packages }}"
+    state: present
+
+- name: Stop and disable firewalld
+  service:
+    name: firewalld
+    state: stopped
+    enabled: no
+
+- name: Start and enable services
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - nginx
+    - mariadb
+    - php-fpm
+
+
+----- playbook/dmz_srv01/roles/middleware_install/vars/main.yml -----
+---
+packages:
+  - epel-release
+  - nginx
+  - mariadb-server
+  - python3
+  - python3-PyMySQL
+  - php
+  - php-fpm
+  - php-mysqlnd
+  - php-gd
+  - unzip
+  - tar
+  - curl
+  - php-cli
+  - php-mbstring
+  - php-xml
+
+
+----- playbook/dmz_srv01/roles/wordpress_setup/tasks/main.yml -----
+---
+# tasks file for wordpress_setup
+
+- name: Change root authentication plugin to mysql_native_password
+  become_user: root
+  mysql_user:
+    name: root
+    host: localhost
+    password: "{{ mariadb_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    plugin: mysql_native_password
+    priv: '*.*:ALL,GRANT'
+    state: present
+
+- name: Create database for WordPress
+  become_user: root
+  mysql_db:
+    name: "{{ wordpress_db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+
+- name: Configure MariaDB user for WordPress
+  become_user: root
+  mysql_user:
+    name: "{{ wordpress_db_user }}"
+    password: "{{ wordpress_db_password }}"
+    priv: "{{ wordpress_db_name }}.*:ALL"
+    host: localhost
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    state: present
+
+- name: Download WordPress
+  get_url:
+    url: https://ja.wordpress.org/latest-ja.tar.gz
+    dest: /tmp/latest-ja.tar.gz
+    force: no
+
+- name: Extract WordPress
+  unarchive:
+    src: /tmp/latest-ja.tar.gz
+    dest: /var/www/html/
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+
+- name: Generate WordPress authentication keys and salts
+  set_fact:
+    auth_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    secure_auth_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    logged_in_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    nonce_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    auth_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    secure_auth_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    logged_in_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    nonce_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+
+- name: Configure wp-config.php
+  template:
+    src: wp-config.php.j2
+    dest: /var/www/html/wp-config.php
+    owner: nginx
+    group: nginx
+    mode: '0644'
+
+- name: Set permissions for WordPress directories
+  file:
+    path: "{{ item.path }}"
+    owner: nginx
+    group: nginx
+    mode: "{{ item.mode }}"
+    recurse: yes
+  loop:
+    - { path: '/var/www/html', mode: '0755' }
+    - { path: '/var/www/html/wp-content', mode: '0755' }
+    - { path: '/var/www/html/wp-content/uploads', mode: '0755' }
+
+- name: Download WP-CLI
+  get_url:
+    url: https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    dest: /usr/local/bin/wp
+    mode: '0755'
+
+- name: Install WordPress with WP-CLI
+  shell: |
+    wp core install \
+      --url="{{ wordpress_site_url }}" \
+      --title="{{ wordpress_site_title }}" \
+      --admin_user="{{ wordpress_admin_user }}" \
+      --admin_password="{{ wordpress_admin_password }}" \
+      --admin_email="{{ wordpress_admin_email }}" \
+      --skip-email
+  args:
+    chdir: /var/www/html
+  environment:
+    PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+
+
+----- playbook/dmz_srv01/roles/wordpress_setup/templates/wp-config.php.j2 -----
 <?php
 define( 'DB_NAME', '{{ wordpress_db_name }}' );
 define( 'DB_USER', '{{ wordpress_db_user }}' );
@@ -387,5 +381,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once ABSPATH . 'wp-settings.php';
+
+
+----- playbook/dmz_srv01/roles/wordpress_setup/vars/main.yml -----
+---
+mariadb_root_password: "Hard-ing0"
+wordpress_db_name: "wordpress_db"
+wordpress_db_user: "admin_wp"
+wordpress_db_password: "Hard-ing0"
+wordpress_site_url: "http://{{ ansible_default_ipv4.address }}"
+wordpress_site_title: "My WordPress Site"
+wordpress_admin_user: "admin"
+wordpress_admin_password: "admin_password"
+wordpress_admin_email: "admin@example.com"
 
 

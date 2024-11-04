@@ -1,0 +1,17 @@
+---
+packages:
+  - epel-release
+  - nginx
+  - mariadb-server
+  - python3
+  - python3-PyMySQL
+  - php
+  - php-fpm
+  - php-mysqlnd
+  - php-gd
+  - unzip
+  - tar
+  - curl
+  - php-cli
+  - php-mbstring
+  - php-xml

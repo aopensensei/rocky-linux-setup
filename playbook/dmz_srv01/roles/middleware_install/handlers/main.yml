@@ -1,0 +1,7 @@
+---
+# handlers file for middleware_install
+
+- name: Restart mariadb
+  service:
+    name: mariadb
+    state: restarted

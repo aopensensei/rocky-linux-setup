@@ -1,0 +1,11 @@
+---
+mariadb_root_password: "Hard-ing0"
+wordpress_db_name: "wordpress_db"
+wordpress_db_user: "admin_wp"
+wordpress_db_password: "Hard-ing0"
+wordpress_db_host: "localhost"  # 追加
+wordpress_site_url: "http://{{ ansible_default_ipv4.address }}"
+wordpress_site_title: "My WordPress Site"
+wordpress_admin_user: "admin"
+wordpress_admin_password: "admin_password"
+wordpress_admin_email: "admin@example.com"

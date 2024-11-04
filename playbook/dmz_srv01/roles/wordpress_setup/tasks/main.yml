@@ -1,0 +1,110 @@
+---
+# tasks file for wordpress_setup
+
+- name: Change root authentication plugin to mysql_native_password
+  become_user: root
+  mysql_user:
+    name: root
+    host: localhost
+    password: "{{ mariadb_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    plugin: mysql_native_password
+    priv: '*.*:ALL,GRANT'
+    state: present
+
+- name: Create database for WordPress
+  become_user: root
+  mysql_db:
+    name: "{{ wordpress_db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+
+- name: Configure MariaDB user for WordPress
+  become_user: root
+  mysql_user:
+    name: "{{ wordpress_db_user }}"
+    password: "{{ wordpress_db_password }}"
+    priv: "{{ wordpress_db_name }}.*:ALL"
+    host: localhost
+    login_user: root
+    login_password: "{{ mariadb_root_password }}"
+    state: present
+
+- name: Download WordPress
+  get_url:
+    url: https://ja.wordpress.org/latest-ja.tar.gz
+    dest: /tmp/latest-ja.tar.gz
+    force: no
+
+- name: Extract WordPress
+  unarchive:
+    src: /tmp/latest-ja.tar.gz
+    dest: /var/www/html/
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+
+- name: Generate WordPress authentication keys and salts
+  set_fact:
+    auth_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    secure_auth_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    logged_in_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    nonce_key: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    auth_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    secure_auth_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    logged_in_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+    nonce_salt: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits,special') }}"
+
+- name: Configure wp-config.php
+  template:
+    src: wp-config.php.j2
+    dest: /var/www/html/wp-config.php
+    owner: nginx
+    group: nginx
+    mode: '0644'
+
+- name: Set permissions for WordPress directories
+  file:
+    path: "{{ item.path }}"
+    owner: nginx
+    group: nginx
+    mode: "{{ item.mode }}"
+    recurse: yes
+  loop:
+    - { path: '/var/www/html', mode: '0755' }
+    - { path: '/var/www/html/wp-content', mode: '0755' }
+    - { path: '/var/www/html/wp-content/uploads', mode: '0755' }
+
+- name: Download WP-CLI
+  get_url:
+    url: https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    dest: /usr/local/bin/wp
+    mode: '0755'
+
+- name: Install WordPress with WP-CLI
+  shell: |
+    wp core install \
+      --url="{{ wordpress_site_url }}" \
+      --title="{{ wordpress_site_title }}" \
+      --admin_user="{{ wordpress_admin_user }}" \
+      --admin_password="{{ wordpress_admin_password }}" \
+      --admin_email="{{ wordpress_admin_email }}" \
+      --skip-email
+  args:
+    chdir: /var/www/html
+  environment:
+    PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+
+# Nginx の設定を追加
+- name: Configure Nginx for WordPress
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+  notify:
+    - Restart nginx
+
+# 必要に応じて PHP-FPM の再起動タスクを追加
+- name: Restart PHP-FPM
+  service:
+    name: php-fpm
+    state: restarted

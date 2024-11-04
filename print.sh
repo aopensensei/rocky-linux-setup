@@ -9,7 +9,14 @@ files=(
     "playbook/inventory.ini.template"
     "playbook/dmz_srv01/dmz_srv01_setup.yml"
     "playbook/dmz_srv01/templates/nginx.conf.j2"
-    "playbook/dmz_srv01/templates/wp-config.php.j2"
+    "playbook/dmz_srv01/roles/account_setup/tasks/main.yml"
+    "playbook/dmz_srv01/roles/account_setup/vars/main.yml"
+    "playbook/dmz_srv01/roles/middleware_install/handlers/main.yml"
+    "playbook/dmz_srv01/roles/middleware_install/tasks/main.yml"
+    "playbook/dmz_srv01/roles/middleware_install/vars/main.yml"
+    "playbook/dmz_srv01/roles/wordpress_setup/tasks/main.yml"
+    "playbook/dmz_srv01/roles/wordpress_setup/templates/wp-config.php.j2"
+    "playbook/dmz_srv01/roles/wordpress_setup/vars/main.yml"
 )
 
 # 各ファイルを順に表示

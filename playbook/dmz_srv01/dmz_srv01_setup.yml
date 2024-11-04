@@ -1,6 +1,7 @@
 - name: Setup DMZ server for WordPress
   hosts: dmz
   become: yes
+  gather_facts: yes  # デフォルトで有効ですが、明示的に指定
 
   vars:
     mariadb_root_password: "Hard-ing0"
@@ -20,7 +21,7 @@
     wordpress_db_user: "admin_wp"
     wordpress_db_password: "Hard-ing0"
     wordpress_db_host: "localhost"
-    wordpress_site_url: "http://{{ srv01_ip }}"
+    wordpress_site_url: "http://{{ ansible_default_ipv4.address }}"
     wordpress_site_title: "My WordPress Site"
     wordpress_admin_user: "admin"
     wordpress_admin_password: "admin_password"
@@ -73,27 +74,19 @@
           - unzip
           - tar
           - curl  # WP-CLI に必要
+          - php-cli  # WP-CLI に必要
+          - php-mbstring  # WP-CLI に必要
+          - php-xml  # WP-CLI に必要
         state: present
 
-    # 4. 追加のPHPモジュールのインストール
-    - name: Install additional PHP modules
-      yum:
-        name:
-          - php-mbstring
-          - php-xml
-          - php-json
-          - php-curl
-          - php-zip
-        state: present
-
-    # 5. ファイアウォールの無効化
+    # 4. ファイアウォールの無効化
     - name: Stop and disable firewalld for unrestricted access
       service:
         name: firewalld
         state: stopped
         enabled: no
 
-    # 6. サービスの起動と有効化
+    # 5. サービスの起動と有効化
     - name: Start and enable services
       service:
         name: "{{ item }}"
@@ -104,7 +97,7 @@
         - mariadb
         - php-fpm
 
-    # 7. MariaDBの設定
+    # 6. MariaDBの設定
     - name: Change root authentication plugin to mysql_native_password
       mysql_user:
         name: root
@@ -133,7 +126,7 @@
         login_password: "{{ mariadb_root_password }}"
         state: present
 
-    # 8. WordPressのインストールと設定
+    # 7. WordPressのインストールと設定
     - name: Download WordPress
       get_url:
         url: https://ja.wordpress.org/latest-ja.tar.gz
@@ -180,7 +173,7 @@
         - { path: '/var/www/html/wp-content', mode: '0755' }
         - { path: '/var/www/html/wp-content/uploads', mode: '0755' }
 
-    # WP-CLI のインストール
+    # 8. WP-CLI のインストール
     - name: Download WP-CLI
       get_url:
         url: https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
